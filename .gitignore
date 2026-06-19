@@ -1,9 +1,10 @@
 
-# Ignore all documentation except the main README.md
-docs/*
-!docs/README.md
-!docs/README.md
-docs/**/*.md
+# Track all documentation files under `docs/` except `docs/README.md`
+!docs/
+!docs/**
+
+# But keep `docs/README.md` ignored (do not add it)
+docs/README.md
 # Environment files
 .env
 
