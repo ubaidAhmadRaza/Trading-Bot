@@ -1,0 +1,24 @@
+
+# Ignore all documentation except the main README.md
+docs/*
+!docs/README.md
+!docs/README.md
+docs/**/*.md
+# Environment files
+.env
+
+
+# Byte-compiled / cached files
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+env/
+
+# IDE/project files
+.vscode/
+.idea/
+
+# Logs
+*.log

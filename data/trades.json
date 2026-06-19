@@ -1,0 +1,23 @@
+[
+  {
+    "ticket": 1408654949,
+    "signal_id": 2,
+    "symbol": "BTCUSD",
+    "action": "BUY",
+    "entry_price": 63103.67,
+    "exit_price": null,
+    "stop_loss": 62000.0,
+    "take_profits": [
+      65000.0
+    ],
+    "volume": 0.29,
+    "opened_at": "2026-06-19T17:44:48.323505",
+    "closed_at": null,
+    "status": "open",
+    "profit_loss": null,
+    "profit_loss_percent": null,
+    "be_activated": false,
+    "runner_mode": false,
+    "notes": ""
+  }
+]

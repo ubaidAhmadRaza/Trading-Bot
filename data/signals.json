@@ -1,0 +1,45 @@
+[
+  {
+    "id": 1,
+    "symbol": "BTCUSD",
+    "action": "BUY",
+    "entry_zone_min": 62900.0,
+    "entry_zone_max": 63000.0,
+    "stop_loss": 62000.0,
+    "take_profits": [
+      64000.0,
+      65000.0
+    ],
+    "channel": "Forex",
+    "confidence": 1.0,
+    "raw_format": "A",
+    "source_message": "BTCUSD BUY\nEntry: 62900-63000\nSL: 62000\nTP1: 64000\nTP2: 65000",
+    "received_at": "2026-06-19T17:43:58.651393",
+    "zone_reached_at": null,
+    "trade_ticket": null,
+    "status": "expired",
+    "expired_at": "2026-06-19T17:54:00.356572",
+    "expiry_reason": "timeout"
+  },
+  {
+    "id": 2,
+    "symbol": "BTCUSD",
+    "action": "BUY",
+    "entry_zone_min": 62900.0,
+    "entry_zone_max": 64000.0,
+    "stop_loss": 62000.0,
+    "take_profits": [
+      65000.0
+    ],
+    "channel": "Forex",
+    "confidence": 0.9,
+    "raw_format": "A",
+    "source_message": "BTCUSD BUY\nEntry: 62900-64000\nSL: 62000\nTP1: 64000\nTP2: 65000",
+    "received_at": "2026-06-19T17:44:45.107360",
+    "zone_reached_at": "2026-06-19T17:44:46.902779",
+    "trade_ticket": 1408654949,
+    "status": "traded",
+    "zone_reached_price": 63103.67,
+    "traded_at": "2026-06-19T17:44:48.319634"
+  }
+]
