@@ -8,7 +8,7 @@ docs/README.md
 .env
 *.session
 session.session
-
+*.zip
 
 # Byte-compiled / cached files
 __pycache__/
