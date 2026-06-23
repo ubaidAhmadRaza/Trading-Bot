@@ -50,8 +50,8 @@ class EnhancedTradingPipeline:
         mt5_password: str,
         mt5_server: str,
         mt5_path: Optional[str] = None,
-        fixed_lot_size: float = 0.29,
-        max_positions: int = 15,
+        fixed_lot_size: float = None,
+        max_positions: int = None,
         enable_notifications: bool = True,
         db_path: str = "data/trading_bot.db"
     ):
@@ -83,6 +83,11 @@ class EnhancedTradingPipeline:
             logger.warning("ENABLE_OPENROUTER_PARSER=true but OPENROUTER_API_KEY is not set — fallback disabled")
 
         self.entry_engine = EntryConfirmationEngine(self.mt5_client)
+        
+        # Use settings.FIXED_LOT_SIZE if no override provided
+        if fixed_lot_size is None:
+            fixed_lot_size = getattr(settings, 'FIXED_LOT_SIZE', 0.29)
+        
         self.position_manager = EnhancedPositionManager(
             self.mt5_client,
             fixed_lot_size=fixed_lot_size,
@@ -107,18 +112,21 @@ class EnhancedTradingPipeline:
     # ── Parser helper ──────────────────────────────────────────────────────
 
     def _parse_signal(self, message_text: str, channel: str):
-        signal = self.signal_parser.parse(message_text, channel)
-        if signal:
-            return signal
+        
 
         if self._openrouter_parser:
             logger.info("Regex parser found no signal — trying OpenRouter/Kimi fallback")
-            signal = self._openrouter_parser.parse(message_text, channel)
-            if signal:
-                logger.info(
-                    f"OpenRouter/Kimi produced signal: {signal.symbol} {signal.action} "
-                    f"[format={signal.raw_format}]"
-                )
+            try:
+                signal = self._openrouter_parser.parse(message_text, channel)
+                if signal:
+                    logger.info(
+                        f"OpenRouter/Kimi produced signal: {signal.symbol} {signal.action} "
+                        f"[format={signal.raw_format}]"
+                    )
+                else:
+                    logger.info("OpenRouter/Kimi returned no signal")
+            except Exception as e:
+                logger.error(f"OpenRouter/Kimi parse error: {str(e)}")
         return signal
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
@@ -174,15 +182,26 @@ class EnhancedTradingPipeline:
 
     async def handle_signal(self, message):
         try:
-            signal = self._parse_signal(message.text, message.chat.title)
+            # Safe channel name extraction
+            try:
+                channel_name = message.chat.title
+            except Exception:
+                channel_name = str(getattr(message, 'chat_id', 'unknown'))
+
+            print(f"DEBUG handle_signal: channel={channel_name}, text={message.text[:100] if message.text else 'None'}")
+
+            signal = self._parse_signal(message.text, channel_name)
             if not signal:
-                logger.debug("No signal found in message (both parsers returned None)")
-                return
-            allowed = getattr(settings, 'ALLOWED_SYMBOLS', None)
-            if allowed and signal.symbol.upper() not in [s.upper() for s in allowed]:
-                logger.info(f"Signal for {signal.symbol} ignored due to ALLOWED_SYMBOLS filter")
+                print("DEBUG handle_signal: no signal parsed")
                 return
             
+            allowed = getattr(settings, 'ALLOWED_SYMBOLS', None)
+            if allowed and signal.symbol.upper() not in [s.upper() for s in allowed]:
+                print(f"DEBUG handle_signal: {signal.symbol} blocked by ALLOWED_SYMBOLS filter")
+                return
+            
+            print(f"DEBUG handle_signal: signal OK - {signal.symbol} {signal.action}")
+
             logger.info(
                 f"Signal received [{signal.raw_format}]: "
                 f"{signal.symbol} {signal.action} zone={signal.entry_zone}"
@@ -201,7 +220,7 @@ class EnhancedTradingPipeline:
             )
 
             if not signal_id:
-                logger.error("Failed to save signal to database")
+                print("DEBUG handle_signal: failed to save signal")
                 return
 
             await self.notifier.send_signal_received(
@@ -213,8 +232,12 @@ class EnhancedTradingPipeline:
             )
 
             self.pending_signals[signal_id] = signal
+            print(f"DEBUG handle_signal: signal saved, ID={signal_id}")
 
         except Exception as e:
+            print(f"DEBUG handle_signal ERROR: {e}")
+            import traceback
+            traceback.print_exc()
             logger.error(f"Error handling signal: {str(e)}")
             self.database.log_error("signal_handler", str(e))
             await self.notifier.send_error(str(e))
@@ -399,14 +422,13 @@ class EnhancedTradingPipeline:
     def _check_trend_continuation(self, trade) -> bool:
         try:
             import MetaTrader5 as mt5
-            import numpy as np
 
-            rates = mt5.copy_rates_from_pos(trade.symbol, 5, 0, 10)
-            if not rates or len(rates) < 5:
+            rates = mt5.copy_rates_from_pos(trade.symbol, mt5.TIMEFRAME_M1, 0, 10)
+            if rates is None or len(rates) < 5:
                 return True
 
-            highs = [r['high'] for r in rates]
-            lows  = [r['low']  for r in rates]
+            highs = [float(r['high']) for r in rates]
+            lows  = [float(r['low'])  for r in rates]
 
             if trade.action.upper() == 'BUY':
                 hh = all(highs[i] <= highs[i+1] for i in range(len(highs)-1))

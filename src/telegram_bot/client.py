@@ -30,66 +30,77 @@ class TelegramSignalClient:
         if not self.client:
             raise ValueError("Client not connected. Call connect() first.")
 
+        # Force full dialog sync first to prevent slow channel resolution
+        logger.info("Syncing dialogs...")
+        await self.client.get_dialogs()
+        logger.info("Dialogs synced")
+
         valid_channels = []
         
         for channel in channels:
             try:
-                # Try to resolve as entity first (for usernames and cached entities)
                 try:
                     entity = await self.client.get_input_entity(channel)
                     valid_channels.append(entity)
                     logger.info(f"✅ Resolved channel: {channel}")
                 except (ValueError, TypeError):
-                    # If resolution fails, try using channel ID directly
-                    # Convert to int if it's a string number
                     if isinstance(channel, str):
                         try:
                             channel_id = int(channel)
                             valid_channels.append(channel_id)
                             logger.info(f"✅ Using channel ID directly: {channel}")
                         except ValueError:
-                            # Not a number, re-raise original error
                             raise ValueError(f'Cannot resolve channel: {channel}')
                     else:
                         raise
             except Exception as e:
                 logger.warning(f"⚠️  Cannot access channel '{channel}': {str(e)}")
-                logger.info(f"   Tip: Ensure you're a member of this channel and it exists")
                 continue
 
         if not valid_channels:
             logger.error("❌ No valid channels to listen to!")
-            logger.info("""
-            CHANNEL CONFIGURATION HELP:
-            
-            1. Channel by Username (e.g., "mytrading_signals"):
-               TELEGRAM_CHANNELS=["mytrading_signals"]
-            
-            2. Channel by ID (e.g., "-1001234567890"):
-               TELEGRAM_CHANNELS=["-1001234567890"]
-               (Must be a member of the channel)
-            
-            3. Multiple Channels:
-               TELEGRAM_CHANNELS=["channel1", "channel2", "-1001234567890"]
-            
-            💡 To find channel ID:
-               - Forward a message from the channel to @userinfobot
-               - It will show the channel ID
-            """)
             raise ValueError("No valid channels configured")
 
         logger.info(f"✅ Listening to {len(valid_channels)} channels")
 
-        @self.client.on(events.NewMessage(chats=valid_channels))
+        @self.client.on(events.NewMessage(chats=valid_channels, incoming=None))
         async def message_handler(event):
             try:
                 message = event.message
+                text = message.text or message.message or ''
+                print(f"RAW MESSAGE from {event.chat_id}: {text[:200] if text else 'NO TEXT (may be image-only)'}")
                 await callback(message)
             except Exception as e:
                 logger.error(f"Error processing message: {str(e)}",
                              extra={'extra_data': {'channel': event.chat_id}})
 
+        @self.client.on(events.MessageEdited(chats=valid_channels))
+        async def edited_message_handler(event):
+            try:
+                message = event.message
+                text = message.text or message.message or ''
+                logger.info(f"📝 Edited message detected in channel {event.chat_id}")
+                await callback(message)
+            except Exception as e:
+                logger.error(f"Error processing edited message: {str(e)}",
+                             extra={'extra_data': {'channel': event.chat_id}})
+
+        # Catch up on any missed messages
+        await self.client.catch_up()
+        logger.info("Catch-up complete — now listening live")
+        
         await self.client.run_until_disconnected()
+
+    async def backfill_messages(self, channels: list, callback: Callable, limit: int = 10):
+        """Fetch recent messages from all channels before live listening starts"""
+        for channel in channels:
+            try:
+                messages = await self.get_recent_messages(channel, limit=limit)
+                logger.info(f"📥 Backfilled {len(messages)} messages from {channel}")
+                for msg in messages:
+                    await callback(msg)
+            except Exception as e:
+                logger.error(f"Error backfilling {channel}: {str(e)}")
 
     async def get_recent_messages(self, channel: str, limit: int = 100):
         """Fetch recent messages from a channel for backfill"""

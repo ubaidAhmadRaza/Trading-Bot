@@ -298,7 +298,7 @@ class EnhancedPositionManager:
             )
 
         # Move SL to break-even
-        if self._move_sl(trade, trade.entry_price):
+        if self._move_sl(trade, round(trade.entry_price, 2)):
             trade.break_even_price = trade.entry_price
             logger.info(f"Break-even set at {trade.entry_price} for ticket {trade.ticket}")
 
@@ -343,7 +343,7 @@ class EnhancedPositionManager:
         if trade.action.upper() == 'BUY':
             new_trail = trade.current_price - self.trail_distance
             if new_trail >= trade.trailing_stop + self.trail_step:
-                if self._move_sl(trade, new_trail):
+                if self._move_sl(trade, round(new_trail, 2)):
                     logger.info(
                         f"Trailing SL moved {trade.trailing_stop:.5f} → {new_trail:.5f} "
                         f"for ticket {trade.ticket}"
@@ -352,7 +352,7 @@ class EnhancedPositionManager:
         else:
             new_trail = trade.current_price + self.trail_distance
             if new_trail <= trade.trailing_stop - self.trail_step:
-                if self._move_sl(trade, new_trail):
+                if self._move_sl(trade, round(new_trail, 2)):
                     logger.info(
                         f"Trailing SL moved {trade.trailing_stop:.5f} → {new_trail:.5f} "
                         f"for ticket {trade.ticket}"
@@ -362,6 +362,24 @@ class EnhancedPositionManager:
     # ── MT5 action helpers ─────────────────────────────────────────────────
 
     def _move_sl(self, trade: TradeInfo, new_sl: float) -> bool:
+        # Round to 2 decimal places for XAUUSD
+        new_sl = round(new_sl, 2)
+        
+        # Get current price to check minimum distance
+        symbol_info = self.mt5_client.get_symbol_info(trade.symbol)
+        if symbol_info:
+            current_price = symbol_info['bid'] if trade.action.upper() == 'SELL' else symbol_info['ask']
+            min_distance = symbol_info.get('point', 0.01) * 10  # 10 points minimum
+            
+            if trade.action.upper() == 'BUY':
+                if new_sl >= current_price - min_distance:
+                    logger.warning(f"SL {new_sl} too close to price {current_price}, skipping")
+                    return False
+            else:
+                if new_sl <= current_price + min_distance:
+                    logger.warning(f"SL {new_sl} too close to price {current_price}, skipping")
+                    return False
+        
         request = {
             "action":   mt5.TRADE_ACTION_SLTP,
             "position": trade.ticket,
