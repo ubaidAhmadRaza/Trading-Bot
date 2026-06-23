@@ -9,7 +9,9 @@ docs/README.md
 *.session
 session.session
 *.zip
-
+# Telegram session files
+*.session
+*.session-journal
 # Byte-compiled / cached files
 __pycache__/
 *.py[cod]
