@@ -6,7 +6,8 @@
 docs/README.md
 # Environment files
 .env
-*.session 
+*.session
+session.session
 
 
 # Byte-compiled / cached files
