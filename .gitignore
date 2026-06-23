@@ -1,4 +1,3 @@
-
 # Track all documentation files under `docs/` except `docs/README.md`
 !docs/
 !docs/**
@@ -7,6 +6,7 @@
 docs/README.md
 # Environment files
 .env
+*.session 
 
 
 # Byte-compiled / cached files
