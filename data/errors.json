@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "error_type": "monitoring_loop",
+    "error_message": "'EnhancedTradingPipeline' object has no attribute '_check_pending_signals'",
+    "context": null,
+    "occurred_at": "2026-06-20T10:53:58.514113"
+  }
+]

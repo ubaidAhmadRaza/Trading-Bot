@@ -52,12 +52,28 @@ class Settings(BaseSettings):
     MAX_OPEN_POSITIONS: int = 15
     ENABLE_ENTRY_CONFIRMATION: bool = True
     ENABLE_RUNNER_MODE: bool = True
+    TRADES_PER_SIGNAL: int = 1
     ENABLE_BREAK_EVEN: bool = True
     
     # Entry Confirmation thresholds
     MIN_M5_REJECTION_CANDLE: bool = True
     MIN_BOS_REQUIRED: bool = True
     EMA_CONFIRMATION_REQUIRED: bool = True
+    
+    ALLOWED_SYMBOLS: List[str] = [] # None means all allowed
+
+    # ── OpenRouter / Kimi fallback parser ─────────────────────────────────────
+    # Set OPENROUTER_API_KEY and ENABLE_OPENROUTER_PARSER=true in .env to
+    # activate the AI fallback for messages the regex parser cannot handle.
+    OPENROUTER_API_KEY: Optional[str] = None
+    ENABLE_OPENROUTER_PARSER: bool = False
+    # OpenRouter model string.  Default: Kimi K2 (fast, cheap, multilingual).
+    OPENROUTER_MODEL: str = "moonshotai/kimi-k2"
+    # HTTP timeout for OpenRouter API calls (seconds)
+    OPENROUTER_TIMEOUT: int = 15
+    TP1_CLOSE_RATIO: float = 0.5
+    TRAIL_DISTANCE: float = 1.0
+    TRAIL_STEP: float = 0.5
 
     # Monitoring
     ENABLE_METRICS: bool = False

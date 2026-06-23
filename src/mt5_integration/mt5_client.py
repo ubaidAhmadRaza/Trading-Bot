@@ -9,15 +9,24 @@ logger = get_logger(__name__)
 
 class MT5Client:
     def __init__(self, login: int, password: str, server: str, mt5_path: Optional[str] = None):
-        self.login = login
+        self.login    = login
         self.password = password
-        self.server = server
+        self.server   = server
         self.mt5_path = mt5_path
         self.connected = False
 
+        # ── Caches ────────────────────────────────────────────────────────
+        # Symbol resolution: signal symbol → broker symbol (never changes)
+        self._symbol_cache: Dict[str, str] = {}
+
+        # Static symbol fields: broker symbol → dict of fields that never
+        # change at runtime (volume limits, digits, filling mode, etc.)
+        self._symbol_static: Dict[str, Dict] = {}
+
+    # ── Connection ─────────────────────────────────────────────────────────
+
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     def connect(self) -> bool:
-        """Connect to MT5 with retry logic"""
         try:
             if self.mt5_path:
                 mt5_path = Path(self.mt5_path)
@@ -56,32 +65,44 @@ class MT5Client:
             self.connected = False
             logger.info("Disconnected from MT5")
 
+    # ── Account ────────────────────────────────────────────────────────────
+
     def get_account_info(self) -> Optional[Dict]:
         try:
             info = mt5.account_info()
             if info:
                 return {
-                    'balance': info.balance,
-                    'equity': info.equity,
-                    'margin': info.margin,
+                    'balance':     info.balance,
+                    'equity':      info.equity,
+                    'margin':      info.margin,
                     'free_margin': info.margin_free,
-                    'profit': info.profit,
-                    'currency': info.currency
+                    'profit':      info.profit,
+                    'currency':    info.currency,
                 }
         except Exception as e:
             logger.error(f"Error getting account info: {str(e)}")
         return None
 
+    # ── Symbol resolution (cached) ─────────────────────────────────────────
+
     def resolve_symbol(self, symbol: str) -> Optional[str]:
-        """Resolve a signal symbol to the broker's MT5 symbol name."""
+        """
+        Resolve a signal symbol to the broker MT5 symbol name.
+        Result is cached for the lifetime of the process — resolution
+        never changes once the broker symbol is found.
+        """
+        if symbol in self._symbol_cache:
+            return self._symbol_cache[symbol]
+
         try:
             if mt5.symbol_select(symbol, True):
+                self._symbol_cache[symbol] = symbol
                 return symbol
 
             candidates = []
             for pattern in (f"{symbol}*", f"*{symbol}*"):
                 matches = mt5.symbols_get(pattern) or []
-                candidates.extend([match.name for match in matches])
+                candidates.extend([m.name for m in matches])
 
             clean_symbol = ''.join(ch for ch in symbol.upper() if ch.isalnum())
             for candidate in candidates:
@@ -89,6 +110,7 @@ class MT5Client:
                 if clean_candidate.startswith(clean_symbol):
                     if mt5.symbol_select(candidate, True):
                         logger.info(f"Resolved MT5 symbol {symbol} -> {candidate}")
+                        self._symbol_cache[symbol] = candidate
                         return candidate
 
             logger.error(f"Could not resolve MT5 symbol {symbol}. Candidates: {candidates[:10]}")
@@ -98,57 +120,80 @@ class MT5Client:
             logger.error(f"Error resolving symbol {symbol}: {str(e)}")
             return None
 
+    # ── Symbol info (static fields cached, tick always live) ───────────────
+
     def get_symbol_info(self, symbol: str) -> Optional[Dict]:
+        """
+        Returns symbol info with live bid/ask from tick.
+        Static fields (volume limits, digits, filling mode) are cached
+        after the first successful call — they never change at runtime.
+        """
         try:
-            resolved_symbol = self.resolve_symbol(symbol)
-            if not resolved_symbol:
+            resolved = self.resolve_symbol(symbol)
+            if not resolved:
                 return None
 
-            info = mt5.symbol_info(resolved_symbol)
-            tick = mt5.symbol_info_tick(resolved_symbol)
+            # ── Live tick (always fresh — contains bid/ask) ────────────────
+            tick = mt5.symbol_info_tick(resolved)
+            if not tick:
+                logger.error(f"Could not get tick for {resolved}: {mt5.last_error()}")
+                return None
 
-            if info and tick:
-                bid = tick.bid or info.bid
-                ask = tick.ask or info.ask
-                if not bid or not ask:
-                    logger.error(f"Symbol {symbol} has invalid bid/ask values: bid={bid}, ask={ask}")
+            bid = tick.bid
+            ask = tick.ask
+            if not bid or not ask:
+                logger.error(f"Invalid bid/ask for {resolved}: bid={bid} ask={ask}")
+                return None
+
+            # ── Static fields (cached after first call) ────────────────────
+            if resolved not in self._symbol_static:
+                info = mt5.symbol_info(resolved)
+                if not info:
+                    logger.error(f"Could not get symbol_info for {resolved}: {mt5.last_error()}")
                     return None
-
-                return {
-                    'symbol': resolved_symbol,
-                    'source_symbol': symbol,
-                    'bid': bid,
-                    'ask': ask,
-                    'spread': info.spread,
-                    'digits': info.digits,
-                    'point': info.point,
-                    'volume_min': info.volume_min,
-                    'volume_max': info.volume_max,
-                    'volume_step': info.volume_step,
-                    'trade_mode': info.trade_mode,
+                self._symbol_static[resolved] = {
+                    'spread':       info.spread,
+                    'digits':       info.digits,
+                    'point':        info.point,
+                    'volume_min':   info.volume_min,
+                    'volume_max':   info.volume_max,
+                    'volume_step':  info.volume_step,
+                    'trade_mode':   info.trade_mode,
                     'filling_mode': info.filling_mode,
-                    'visible': info.visible,
+                    'visible':      info.visible,
                 }
+                logger.debug(f"Cached static symbol info for {resolved}")
 
-            logger.error(f"Could not get tick/symbol info for {symbol}: {mt5.last_error()}")
+            static = self._symbol_static[resolved]
+
+            return {
+                'symbol':        resolved,
+                'source_symbol': symbol,
+                'bid':           bid,
+                'ask':           ask,
+                **static,
+            }
+
         except Exception as e:
             logger.error(f"Error getting symbol info for {symbol}: {str(e)}")
         return None
+
+    # ── Positions ──────────────────────────────────────────────────────────
 
     def get_positions(self) -> List[Dict]:
         try:
             positions = mt5.positions_get()
             if positions:
                 return [{
-                    'ticket': pos.ticket,
-                    'symbol': pos.symbol,
-                    'type': 'BUY' if pos.type == 0 else 'SELL',
-                    'volume': pos.volume,
-                    'price_open': pos.price_open,
+                    'ticket':        pos.ticket,
+                    'symbol':        pos.symbol,
+                    'type':          'BUY' if pos.type == 0 else 'SELL',
+                    'volume':        pos.volume,
+                    'price_open':    pos.price_open,
                     'price_current': pos.price_current,
-                    'profit': pos.profit,
-                    'sl': pos.sl,
-                    'tp': pos.tp
+                    'profit':        pos.profit,
+                    'sl':            pos.sl,
+                    'tp':            pos.tp,
                 } for pos in positions]
         except Exception as e:
             logger.error(f"Error getting positions: {str(e)}")

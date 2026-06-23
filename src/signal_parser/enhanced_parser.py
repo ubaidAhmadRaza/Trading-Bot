@@ -130,11 +130,11 @@ def _to_float(s: str) -> Optional[float]:
         return None
 
 
-def _build_zone(entry_str: str, buffer_pct: float = 0.05) -> dict:
+def _build_zone(entry_str: str) -> dict:
     """
     Build an entry zone dict from a raw entry string.
     Handles:
-      '1.0850'               → single price  → ±buffer
+      '1.0850'               → single price  → min = max = price
       '1.0850 - 1.0870'     → explicit range
       '1.0850/1.0870'       → slash range
     """
@@ -148,11 +148,10 @@ def _build_zone(entry_str: str, buffer_pct: float = 0.05) -> dict:
         if lo and hi:
             return {'min': min(lo, hi), 'max': max(lo, hi)}
 
-    # Single price with buffer
+    # Single price → exact, no buffer
     price = _to_float(re.sub(r'[^\d.,]', '', entry_str))
     if price:
-        buf = price * (buffer_pct / 100)
-        return {'min': round(price - buf, 6), 'max': round(price + buf, 6)}
+        return {'min': price, 'max': price}
 
     return {'min': 0.0, 'max': 0.0}
 
