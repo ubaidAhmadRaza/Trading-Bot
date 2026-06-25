@@ -253,7 +253,7 @@ class EnhancedTradingPipeline:
                     await self._handle_trade_update(trade)
 
                 await self._check_pending_signals()
-                await self._check_runner_mode_trades()
+                
 
                 await asyncio.sleep(interval)
 
